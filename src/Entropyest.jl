@@ -7,6 +7,7 @@ function getkldfromsamples(x1, x2; σ=[0.5], b=[20], nfolds=10)
     rfunc = densratiofunc(x1, x2, K_dre) 
     # KLD(x1~p1||x2~q) = expectation of lr when samples are drawn from x1
     KLD = mean(log.(rfunc.(x1)))
+    @info "done one bin"
     [KLD, K_dre.σ, K_dre.b]
 end    
 
