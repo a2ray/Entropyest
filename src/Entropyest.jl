@@ -28,7 +28,8 @@ function getkldfromopt(opt::transD_GP.Options, x2::AbstractVector, pids::UnitRan
     nothing
 end    
 
-function getkldfromfilenames(fnames::Vector{String}, opt_in::transD_GP.Options, x2::AbstractVector; burninfrac=0.5, σ=[0.5], b=[20], nfolds=10)
+function getkldfromfilenames(fnames::Vector{String}, opt_in::transD_GP.Options, x2::AbstractVector; 
+                        burninfrac=0.5, σ=[0.5], b=[20], nfolds=10, debug=false)
     nsoundings = length(fnames)
     nchainspersounding = length(opt_in.xall)
     ncores = nworkers()
@@ -41,7 +42,8 @@ function getkldfromfilenames(fnames::Vector{String}, opt_in::transD_GP.Options, 
             pids = getpids(i, nchainspersounding)
             opt = deepcopy(opt_in)
             opt.fdataname = fnames[s]*"_"
-            @async remotecall_wait(getkldfromopt, pids[1], opt, x2, pids[2:end]; σ, b, nfolds, burninfrac)
+            @async remotecall_wait(getkldfromopt, pids[1], opt, x2, pids[2:end]; 
+                                    σ, b, nfolds, burninfrac, debug)
         end # @sync
         @info "done $iter out of $nsequentialiters at $(Dates.now())"
     end
