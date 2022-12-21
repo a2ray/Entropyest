@@ -1,5 +1,6 @@
 module Entropyest
 using DensityRatioEstimation, Statistics, HiQGA.transD_GP, Distributed, DelimitedFiles, Dates
+using HiQGA.transD_GP.SoundingDistributor
 
 function getkldfromsamples(x1, x2; σ=[0.5], b=[20], nfolds=10)
     K_dre = fit(KLIEP, x1, x2, LCV((;σ,b), nfolds))
@@ -7,18 +8,19 @@ function getkldfromsamples(x1, x2; σ=[0.5], b=[20], nfolds=10)
     rfunc = densratiofunc(x1, x2, K_dre) 
     # KLD(x1~p1||x2~q) = expectation of lr when samples are drawn from x1
     KLD = mean(log.(rfunc.(x1)))
-    @info "done one bin"
     [KLD, K_dre.σ, K_dre.b]
 end    
 
-function getkldfromopt(opt::transD_GP.Options, x2::AbstractVector, pids::Array{Int, 1}; σ=[0.5], b=[20], nfolds=10, burninfrac=0.5)
+function getkldfromopt(opt::transD_GP.Options, x2::AbstractVector, pids::UnitRange; σ=[0.5], b=[20], nfolds=10, burninfrac=0.5)
     # open file
+    @info "opening "*opt.fdataname*"at pids $pids"
     x1 = reduce(vcat, transD_GP.CommonToAll.assembleTat1(opt, :fstar; burninfrac, temperaturenum=1))
     x2 = reduce(vcat, x2)
     @assert size(x1, 2) == size(x2, 2)
     # get kld from prior samples in x2
-    A = reduce(hcat, pmap((x, y)->getkldfromsamples(x, y; σ, b, nfolds), WorkerPool(pids), eachcol(x1), eachcol(x2)))'
-    writedlm(opt.fdataname*"_kld.txt", A)
+    A = reduce(hcat, pmap((x, y)->getkldfromsamples(x, y; σ, b, nfolds), WorkerPool(collect(pids)), eachcol(x1), eachcol(x2)))'
+    @info "writing "*opt.fdataname
+    writedlm(opt.fdataname*"kld.txt", A)
     nothing
 end    
 
@@ -28,12 +30,12 @@ function getkldfromfilenames(fnames::Vector{String}, opt_in::transD_GP.Options, 
     ncores = nworkers()
     nsequentialiters, nparallelsoundings = splittasks(;nsoundings, ncores, nchainspersounding, ppn=nchainspersounding+1)
     
-    opt = deepcopy(opt_in)
     @info "done 0 out of $nsequentialiters at $(Dates.now())"
     for iter = 1:nsequentialiters
         ss = getss(iter, nsequentialiters, nparallelsoundings, nsoundings)
         @sync for (i, s) in enumerate(ss)
             pids = getpids(i, nchainspersounding)
+            opt = deepcopy(opt_in)
             opt.fdataname = fnames[s]*"_"
             @async remotecall_wait(getkldfromopt, pids[1], opt, x2, pids[2:end]; σ, b, nfolds, burninfrac)
         end # @sync
