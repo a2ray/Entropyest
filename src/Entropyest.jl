@@ -32,15 +32,15 @@ end
 function getkldfromfilenames(fnames::Vector{String}, opt_in::transD_GP.Options, x2::AbstractVector; 
                         burninfrac=0.5, σ=[0.5], b=[20], nfolds=10, debug=false)
     nsoundings = length(fnames)
-    nchainspersounding = length(opt_in.xall)
+    ncorespersounding = length(opt_in.xall)
     ncores = nworkers()
-    nsequentialiters, nparallelsoundings = splittasks(;nsoundings, ncores, nchainspersounding)
+    nsequentialiters, nparallelsoundings = splittasks(;nsoundings, ncores, ncorespersounding)
     
     @info "done 0 out of $nsequentialiters at $(Dates.now())"
     for iter = 1:nsequentialiters
         ss = getss(iter, nsequentialiters, nparallelsoundings, nsoundings)
         @sync for (i, s) in enumerate(ss)
-            pids = getpids(i, nchainspersounding)
+            pids = getpids(i, ncorespersounding)
             opt = deepcopy(opt_in)
             opt.fdataname = fnames[s]*"_"
             @async remotecall_wait(getkldfromopt, pids[1], opt, x2, pids[2:end]; 
