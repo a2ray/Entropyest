@@ -30,9 +30,9 @@ function getkldfromopt(opt::transD_GP.Options, x2::AbstractVector, pids::UnitRan
 end    
 
 function getkldfromfilenames(fnames::Vector{String}, opt_in::transD_GP.Options, x2::AbstractVector; 
-                        burninfrac=0.5, σ=[0.5], b=[20], nfolds=10, debug=false)
+                        burninfrac=0.5, σ=[0.5], b=[20], nfolds=10, 
+                        debug=false, ncorespersounding=3)
     nsoundings = length(fnames)
-    ncorespersounding = length(opt_in.xall)
     ncores = nworkers()
     nsequentialiters, nparallelsoundings = splittasks(;nsoundings, ncores, ncorespersounding)
     
