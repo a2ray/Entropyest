@@ -56,11 +56,6 @@ function getkldfromsoundings(soundings::Vector{S}, opt_in::transD_GP.Options, x2
 end
 
 ## parallel stuff
-function splittasks(soundings::AbstractVector; ncorespersounding=nothing)
-    nsoundings = length(soundings)
-    ncores = nworkers()
-    splittasks(;nsoundings, ncores, ncorespersounding)
-end
 
 function splittasks(;nsoundings=nothing, ncores=nothing, ncorespersounding=nothing)
     # split into sequential iterations of parallel soundings
