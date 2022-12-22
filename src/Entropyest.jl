@@ -9,7 +9,7 @@ function getkldfromsamples(x1, x2; σ=[0.5], b=[20], nfolds=10, debug=false)
     rfunc = densratiofunc(x1, x2, K_dre) 
     # KLD(x1~p1||x2~q) = expectation of lr when samples are drawn from x1
     KLD = mean(log.(rfunc.(x1)))
-    debug && (@info "$process (myid()) took $(time()-t) seconds")
+    debug && (@info "process $(myid()) took $(time()-t) seconds")
     [KLD, K_dre.σ, K_dre.b]
 end    
 
@@ -20,7 +20,7 @@ function getkldfromopt(opt::transD_GP.Options, x2::AbstractVector, pids::UnitRan
     x1 = reduce(vcat, transD_GP.CommonToAll.assembleTat1(opt, :fstar; burninfrac, temperaturenum=1))
     x2 = reduce(vcat, x2)
     @assert size(x1, 2) == size(x2, 2)
-    debug && (x1, x2 = map(x->x[1:restrictto,:]))
+    debug && (x1, x2 = map(x->x[:,1:restrictto], (x1, x2)))
     # get kld from prior samples in x2
     A = reduce(hcat, pmap((x, y)->getkldfromsamples(x, y; σ, b, nfolds, debug), 
                                     WorkerPool(collect(pids)), eachcol(x1), eachcol(x2)))'
