@@ -18,11 +18,23 @@ function getkldfromopt(opt::transD_GP.Options, x2::AbstractVector, pids::UnitRan
     @info "OPENING "*opt.fdataname*"at pids $pids at $(Dates.now())"
     x1 = reduce(vcat, transD_GP.CommonToAll.assembleTat1(opt, :fstar; burninfrac, temperaturenum=1))
     x2 = reduce(vcat, x2)
-    @assert size(x1, 2) == size(x2, 2)
     debug && ((x1, x2) = map(x->x[:,1:restrictto], (x1, x2)))
+    nlayers = size(x1, 2)
+    @assert nlayers == size(x2, 2)
     # get kld from prior samples in x2
-    A = reduce(hcat, pmap((x, y)->getkldfromsamples(x, y; σ, b, nfolds, debug), 
-                                    WorkerPool(collect(pids)), eachcol(x1), eachcol(x2)))'
+    # A = reduce(hcat, pmap((x, y)->getkldfromsamples(x, y; σ, b, nfolds, debug), 
+    #                                 WorkerPool(collect(pids)), eachcol(x1), eachcol(x2)))'
+    nparallelklds = length(pids)
+    nsequentialiters = ceil(Int, nlayers/nparallelklds)
+    for iter = 1:nsequentialiters
+        layers = getss(iter, nsequentialiters, nparallelklds, nlayers)
+        ipid = 1
+        @sync for layer in layers
+            @async remotecall_fetch(getkldfromsamples, pids[ipid], 
+                                view(x1[:,layer]), view(x2[:,layer]); σ, b, nfolds, debug)
+            ipid += 1
+        end
+    end        
     @info "WRITING "*opt.fdataname*" at $(Dates.now())"
     writedlm(opt.fdataname*"kld.txt", A)
     nothing
@@ -57,6 +69,7 @@ end
 
 ## parallel stuff
 
+# global splitters across soundings
 function splittasks(;nsoundings=nothing, ncores=nothing, ncorespersounding=nothing)
     # split into sequential iterations of parallel soundings
     @assert !any(isnothing.([nsoundings, ncores, ncorespersounding]))
