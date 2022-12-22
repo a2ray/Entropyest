@@ -1,6 +1,5 @@
 module Entropyest
 using DensityRatioEstimation, Statistics, HiQGA.transD_GP, Distributed, DelimitedFiles, Dates
-using HiQGA.transD_GP.SoundingDistributor
 
 function getkldfromsamples(x1, x2; σ=[0.5], b=[20], nfolds=10, debug=false)
     t = time()
