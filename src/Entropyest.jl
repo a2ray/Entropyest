@@ -28,15 +28,13 @@ function getkldfromopt(opt::transD_GP.Options, x2::AbstractVector, pids::UnitRan
     nsequentialiters = ceil(Int, nlayers/nparallelklds)
     for iter = 1:nsequentialiters
         layers = getss(iter, nsequentialiters, nparallelklds, nlayers)
-        ipid = 1
-        @sync for layer in layers
-            @async remotecall_fetch(getkldfromsamples, pids[ipid], 
+        @sync for (ilayer, layer) in enumerate(layers)
+            @async remotecall_fetch(getkldfromsamples, pids[ilayer], 
                                 view(x1[:,layer]), view(x2[:,layer]); σ, b, nfolds, debug)
-            ipid += 1
         end
     end        
     @info "WRITING "*opt.fdataname*" at $(Dates.now())"
-    writedlm(opt.fdataname*"kld.txt", A)
+    # writedlm(opt.fdataname*"kld.txt", A)
     nothing
 end    
 
