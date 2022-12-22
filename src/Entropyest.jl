@@ -20,7 +20,7 @@ function getkldfromopt(opt::transD_GP.Options, x2::AbstractVector, pids::UnitRan
     x1 = reduce(vcat, transD_GP.CommonToAll.assembleTat1(opt, :fstar; burninfrac, temperaturenum=1))
     x2 = reduce(vcat, x2)
     @assert size(x1, 2) == size(x2, 2)
-    debug && (x1, x2 = map(x->x[:,1:restrictto], (x1, x2)))
+    debug && ((x1, x2) = map(x->x[:,1:restrictto], (x1, x2)))
     # get kld from prior samples in x2
     A = reduce(hcat, pmap((x, y)->getkldfromsamples(x, y; σ, b, nfolds, debug), 
                                     WorkerPool(collect(pids)), eachcol(x1), eachcol(x2)))'
