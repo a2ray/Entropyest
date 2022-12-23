@@ -1,15 +1,19 @@
 module Entropyest
-using DensityRatioEstimation, Statistics, HiQGA.transD_GP, Distributed, DelimitedFiles, Dates
+using DensityRatioEstimation, Statistics, HiQGA.transD_GP, 
+    Distributed, DelimitedFiles, Dates, Optim
 
 function getkldfromsamples(x1, x2; σ=[0.5], b=[20], nfolds=10, debug=false)
+    debug && (@info "starting KLD at $(myid())")
     t = time()
     K_dre = fit(KLIEP, x1, x2, LCV((;σ,b), nfolds))
-    # lr = ln(p(x1)/q(x2))
-    rfunc = densratiofunc(x1, x2, K_dre) 
-    # KLD(x1~p1||x2~q) = expectation of lr when samples are drawn from x1
-    KLD = mean(log.(rfunc.(x1)))
+    debug && (@info "got CV at $(myid())")
+    ## lr = ln(p(x1)/q(x2))
+    #rfunc = densratiofunc(x1, x2, K_dre) 
+    debug && (@info "got RFUNC at $(myid())")
+    ## KLD(x1~p1||x2~q) = expectation of lr when samples are drawn from x1
+    # KLD = mean(log.(rfunc.(x1)))
     debug && (@info "process $(myid()) took $(time()-t) seconds")
-    [KLD, K_dre.σ, K_dre.b]
+    # [KLD, K_dre.σ, K_dre.b]
 end    
 
 function getkldfromopt(opt::transD_GP.Options, x2::AbstractVector, pids::UnitRange; 
@@ -29,8 +33,9 @@ function getkldfromopt(opt::transD_GP.Options, x2::AbstractVector, pids::UnitRan
     for iter = 1:nsequentialiters
         layers = getss(iter, nsequentialiters, nparallelklds, nlayers)
         @sync for (ilayer, layer) in enumerate(layers)
+            @info pids[ilayer], layer
             @async remotecall_fetch(getkldfromsamples, pids[ilayer], 
-                                view(x1[:,layer]), view(x2[:,layer]); σ, b, nfolds, debug)
+                                x1[:,layer], x2[:,layer]; σ, b, nfolds, debug)
         end
     end        
     @info "WRITING "*opt.fdataname*" at $(Dates.now())"
