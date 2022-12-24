@@ -12,7 +12,7 @@ function getkldfromsamples(x1, x2; σ=[0.5], b=[20], nfolds=10, debug=false, nfi
     # KLD(x1~p1||x2~q) = expectation of lr when samples are drawn from x1
     KLD = mean(log.(rfunc.(x1)))
     debug && (@info "process $(myid()) took $(time()-t) seconds")
-    # [KLD, K_dre.σ, K_dre.b]
+    [KLD, K_dre.σ, K_dre.b]
 end    
 
 function getkldfromopt(opt::transD_GP.Options, x2::AbstractVector, pids::UnitRange; 
