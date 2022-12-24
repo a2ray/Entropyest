@@ -64,7 +64,6 @@ end
 
 ## parallel stuff
 
-# global splitters across soundings
 function splittasks(;nsoundings=nothing, ncores=nothing, ncorespersounding=nothing)
     # split into sequential iterations of parallel soundings
     @assert !any(isnothing.([nsoundings, ncores, ncorespersounding]))
