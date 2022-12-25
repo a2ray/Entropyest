@@ -11,8 +11,8 @@ function getkldfromsamples(x1, x2; σ=[0.5], b=[20], nfolds=10, debug=false, Kfo
     K_dre = Vector{Any}(undef, Kfolds)
     KLD = zeros(Kfolds)
     for k = 1:Kfolds
-        idx_x1 = ridx_x1[getfoldidx(k, nperfold_x1, K, nx1)]
-        idx_x2 = ridx_x2[getfoldidx(k, nperfold_x2, K, nx2)]
+        idx_x1 = ridx_x1[getfoldidx(k, nperfold_x1, Kfolds, nx1)]
+        idx_x2 = ridx_x2[getfoldidx(k, nperfold_x2, Kfolds, nx2)]
         K_dre[k] = fit(KLIEP, x1[idx_x1], x2[idx_x2], LCV((;σ,b), nfolds))
         rfunc = densratiofunc(x1[idx_x1], x2[idx_x2], K_dre[k])
         KLD[k] = mean(log.(rfunc.(x1[idx_x1])))
