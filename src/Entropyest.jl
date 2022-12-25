@@ -1,19 +1,29 @@
 module Entropyest
 using DensityRatioEstimation, Statistics, HiQGA.transD_GP, Distributed, DelimitedFiles, Dates, Random
 
-function getkldfromsamples(x1, x2; σ=[0.5], b=[20], nfolds=10, debug=false, nfit=6000)
+function getkldfromsamples(x1, x2; σ=[0.5], b=[20], nfolds=10, debug=false, Kfolds=5)
     t = time()
     nx1, nx2 = length(x1), length(x2)
-    nx1, nx2 = map(n -> ( n > nfit ? nfit : n ), (nx1, nx2))  # make sure nsamples isn't too huge
     debug && (@info "fitting $nx1, $nx2 samples")
-    K_dre = fit(KLIEP, x1[randperm(nx1)[1:nx1]], x2[randperm(nx2)[1:nx2]], LCV((;σ,b), nfolds))
-    # lr = ln(p(x1)/q(x2))
-    rfunc = densratiofunc(x1, x2, K_dre) 
-    # KLD(x1~p1||x2~q) = expectation of lr when samples are drawn from x1
-    KLD = mean(log.(rfunc.(x1)))
+    nperfold_x1, nperfold_x2 = map(nx->getnperfold(nx, Kfolds), (nx1, nx2))
+    debug && (@info "perfold are $nperfold_x1, $nperfold_x2 samples")
+    ridx_x1, ridx_x2 = map(nx->getrandomizedidx(nx), (nx1, nx2))
+    K_dre = Vector{Any}(undef, Kfolds)
+    KLD = zeros(Kfolds)
+    for k = 1:Kfolds
+        idx_x1 = ridx_x1[getfoldidx(k, nperfold_x1, K, nx1)]
+        idx_x2 = ridx_x2[getfoldidx(k, nperfold_x2, K, nx2)]
+        K_dre[k] = fit(KLIEP, x1[idx_x1], x2[idx_x2], LCV((;σ,b), nfolds))
+        rfunc = densratiofunc(x1[idx_x1], x2[idx_x2], K_dre[k])
+        KLD[k] = mean(log.(rfunc.(x1[idx_x1])))
+    end    
     debug && (@info "process $(myid()) took $(time()-t) seconds")
-    [KLD, K_dre.σ, K_dre.b]
+    [mean(KLD), mean(getproperty.(K_dre, :σ)), mean(getproperty.(K_dre, :b))]
 end    
+
+getrandomizedidx(totalnum) = randperm(totalnum)
+getnperfold(totalnum, K) = floor(Int, totalnum/K)
+getfoldidx(k, nperfold, K, totalnum) = k < K ? ((k-1)nperfold + 1 : k*nperfold) : ((K-1)nperfold + 1 : totalnum) 
 
 function getkldfromopt(opt::transD_GP.Options, x2::AbstractVector, pids::UnitRange; 
             σ=[0.5], b=[20], nfolds=2, burninfrac=0.5, debug=false, restrictto=2, nuse=6000, nfit=6000)
