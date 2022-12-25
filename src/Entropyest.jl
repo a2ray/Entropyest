@@ -26,7 +26,7 @@ getnperfold(totalnum, K) = floor(Int, totalnum/K)
 getfoldidx(k, nperfold, K, totalnum) = k < K ? ((k-1)nperfold + 1 : k*nperfold) : ((K-1)nperfold + 1 : totalnum) 
 
 function getkldfromopt(opt::transD_GP.Options, x2::AbstractVector, pids::UnitRange; 
-            σ=[0.5], b=[20], nfolds=2, burninfrac=0.5, debug=false, restrictto=2, nuse=6000, nfit=6000)
+            σ=[0.5], b=[20], nfolds=2, burninfrac=0.5, debug=false, restrictto=2, nuse=6000, Kfolds=5)
     # open file
     debug && @info "OPENING "*opt.fdataname*"at pids $pids with burin: $burninfrac at $(Dates.now())"
     x1 = reduce(vcat, transD_GP.CommonToAll.assembleTat1(opt, :fstar; burninfrac, temperaturenum=1))
@@ -38,7 +38,7 @@ function getkldfromopt(opt::transD_GP.Options, x2::AbstractVector, pids::UnitRan
     debug && (@info "using $nx1, $nx2 samples")
     x1, x2 = map((x, n) -> x[1:n,:], (x1, x2), (nx1, nx2))
     # get kld from prior samples in x2
-    A = reduce(hcat, pmap((x, y)->getkldfromsamples(x, y; σ, b, nfolds, nfit, debug), 
+    A = reduce(hcat, pmap((x, y)->getkldfromsamples(x, y; σ, b, nfolds, Kfolds, debug), 
                                     WorkerPool(collect(pids)), eachcol(x1), eachcol(x2)))'
     debug && @info "WRITING "*opt.fdataname*" at $(Dates.now())"
     writedlm(opt.fdataname*"kld.txt", A)
@@ -47,7 +47,7 @@ end
 
 function getkldfromfilenames(fnames::Vector{String}, opt_in::transD_GP.Options, x2::AbstractVector; 
                         burninfrac=0.5, σ=[0.5], b=[20], nfolds=10, 
-                        debug=false, ncorespersounding=3, nuse=6000, nfit=6000)
+                        debug=false, ncorespersounding=3, nuse=6000, Kfolds=5)
     nsoundings = length(fnames)
     ncores = nworkers()
     nsequentialiters, nparallelsoundings = splittasks(;nsoundings, ncores, ncorespersounding)
@@ -60,7 +60,7 @@ function getkldfromfilenames(fnames::Vector{String}, opt_in::transD_GP.Options, 
             opt = deepcopy(opt_in)
             opt.fdataname = fnames[s]*"_"
             @async remotecall_wait(getkldfromopt, pids[1], opt, x2, pids[2:end]; 
-                                    σ, b, nfolds, burninfrac, nuse, nfit, debug)
+                                    σ, b, nfolds, burninfrac, nuse, Kfolds, debug)
         end # @sync
         @info "done $iter out of $nsequentialiters at $(Dates.now())"
     end
