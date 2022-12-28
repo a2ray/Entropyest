@@ -55,9 +55,10 @@ function getkldfromfilenames(fnames::Vector{String}, opt_in::transD_GP.Options, 
     nothing    
 end    
 
-function getkldfromsoundings(soundings::Vector{S}, opt_in::transD_GP.Options, x2::AbstractVector; burninfrac=0.5, σ=[0.5], b=[20], nfolds=10) where S<:Sounding
+function getkldfromsoundings(soundings::Vector{S}, opt_in::transD_GP.Options, x2::AbstractVector; 
+            burninfrac=0.5, σ=[0.5], b=[20], nfolds=10, debug=false, ncorespersounding=3, nuse=6000) where S<:Sounding
     fnames = [s.sounding_string for s in soundings]
-    getkldfromfilenames(fnames, opt_in, x2; burninfrac, σ, b, nfolds)
+    getkldfromfilenames(fnames, opt_in, x2; burninfrac, σ, b, nfolds, debug, ncorespersounding, nuse)
 end
 
 ## parallel stuff
