@@ -1,5 +1,6 @@
 module Entropyest
-using DensityRatioEstimation, Statistics, HiQGA.transD_GP, Distributed, DelimitedFiles, Dates, Random
+using DensityRatioEstimation, Statistics, HiQGA.transD_GP, Distributed, DelimitedFiles, 
+Dates, Random, KernelDensity, KernelDensitySJ, PyPlot
 
 function getkldfromsamples(x1, x2; σ=[0.5], b=[20], nfolds=10, debug=false)
     t = time()
@@ -84,6 +85,74 @@ end
 
 function getpids(i, ncorespersounding)
     ncorespersounding*(i-1) + 2 : ncorespersounding*i + 1
+end
+
+# scoring stuff
+
+function getscore(xtrue, pdfx::transD_GP.CommonToAll.KDEstimator)
+    -log(pdfx(xtrue))
+end
+
+function findlayer(ztrue::Real, zboundaries::Vector)
+    findfirst(zboundaries .>= ztrue)
+end    
+
+function getscore(ρtrue::Vector, ztrue::Vector, zboundaries::Vector, ρpost::AbstractArray, K::transD_GP.CommonToAll.KDEtype)
+    @assert length(ρtrue) == length(ztrue)
+    map((ρ, z)->begin
+        ilayer = findlayer(z, zboundaries)
+        isnothing(ilayer) && (ilayer=length(zboundaries))
+        s = getscore(ρ, transD_GP.CommonToAll.kde_(K, ρpost[:,ilayer]))
+        # (ilayer == 23 || ilayer == 24)&& (@info "check" z, ρ, transD_GP.CommonToAll.kde_(K, ρpost[:,ilayer])(ρ), s)
+        # s
+    end,
+    ρtrue, ztrue)        
+end
+
+function getscorefromopt(opt::transD_GP.Options; 
+        ρtrue=zeros(0), ztrue=zeros(0), zboundaries=zeros(0), K=transD_GP.CommonToAll.SJ(), burninfrac=0.5)
+    @assert !isempty(ρtrue)
+    @assert !isempty(ztrue)
+    @assert !isempty(zboundaries)
+    @info "OPENING "*opt.fdataname*" at $(Dates.now())"
+    ρpost = reduce(vcat, transD_GP.CommonToAll.assembleTat1(opt, :fstar; burninfrac, temperaturenum=1))
+    getscore(ρtrue, ztrue, zboundaries, ρpost, K)
+end
+
+function getscorefromfnames(fnames::Vector{String}, opt::transD_GP.Options; 
+    ρtrue=zeros(0), ztrue=zeros(0), zboundaries=zeros(0), K=transD_GP.CommonToAll.SJ(), burninfrac=0.5, doplot=false)
+    s = map(fn->begin
+        opt.fdataname = fn*"_"
+        getscorefromopt(opt; 
+        ρtrue, ztrue, zboundaries, K, burninfrac)
+    end,
+    fnames)
+end
+
+function checkavg(s::Vector, ztrue, zboundaries)
+    @assert length(s[1]) == length(ztrue)
+    scopy = map(x->zeros(length(x)), s)
+    for i in 1:length(zboundaries)
+        if i < length(zboundaries)
+            idxin = findall(zboundaries[i] .< ztrue .<= zboundaries[i+1])
+        else
+            idxin = findall(zboundaries[end] .< ztrue)
+        end        
+        for j in 1:length(s)
+            scopy[j][idxin] .= mean(s[j][idxin])
+        end     
+    end    
+    scopy
+end    
+
+function plotscores(ρ_, zb_, S::Vector; figsize=(10,5))
+    f, ax = plt.subplots(1, 2; sharey=true, figsize)
+    ax[1].step(log10.(ρ_), zb_)
+    for s in S
+        ax[2].step(s, zb_)
+    end    
+    ax[1].invert_xaxis()
+    ax[1].invert_yaxis()
 end
 
 end # module Entropyest
