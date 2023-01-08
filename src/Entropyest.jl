@@ -155,4 +155,59 @@ function plotscores(ρ_, zb_, S::Vector; figsize=(10,5))
     ax[1].invert_yaxis()
 end
 
+nattobit(x) = log2(exp(1.))*x
+bittonat(x) = x/log2(exp(1.))
+
+# plot kld stuff
+function kldcompare(parentdir, subdirs; yl=nothing, topowidth=2, fontsize=11,
+        figsize=(15, 4), zall=[1.], dr=[1.], dz=[1.], vmin=1e-2, cmap="gist_ncar", usemax=nothing, figsize_hist=(5,7),
+        preferEright=true, preferNright=false, histogram_depth_ranges=([0., 300],), histogram_kld_ranges=([0:0.1:2],))
+    # has to be run from the parent directory containing all survey subdirs
+    @assert length(histogram_depth_ranges) == length(histogram_kld_ranges)
+    nsurveys, nhists = length(subdirs), length(histogram_depth_ranges)
+    heightratios = ones(nsurveys+1); heightratios[end]=0.1
+    fig, ax = plt.subplots(nsurveys+1, 1, gridspec_kw=Dict("height_ratios" => heightratios), figsize=figsize)
+    fig2, ax2 = plt.subplots(nhists, 1, sharex="all", figsize=figsize_hist, squeeze=false)
+    imh = Vector{Any}(undef, nsurveys)
+    foundmax = -Inf
+    for (i, dir) in enumerate(subdirs)
+        include(joinpath(parentdir, dir, "01_read_data.jl"))
+        A = [readdlm(joinpath(parentdir, dir, s.sounding_string*"_kld.txt"))[:,1] for s in soundings]
+        img = reduce(hcat, A)
+        img[img.<0] .= 0.
+        maximg = maximum(img[:])
+        (maximg > foundmax) && (foundmax = maximg)
+        A, gridx, gridz, topofine, R = transD_GP.CommonToAll.makegrid(img, soundings; zall, dz, dr)
+        imh[i] = ax[i].imshow(A; extent=[gridx[1], gridx[end], gridz[end], gridz[1]], aspect="auto", cmap, vmin)
+        ax[i].plot(gridx, topofine, linewidth=topowidth, "-k")
+        ax[i].set_ylabel("Height m")
+        !isnothing(yl) && ax[i].set_ylim(yl)
+        transD_GP.CommonToAll.plotNEWSlabels(soundings, gridx, gridz, [ax[i]]; preferEright, preferNright)
+        i != nsurveys && ax[i].set_xticklabels([])
+        # now for the histograms with depth
+        for j = 1:nhists
+            idx = histogram_depth_ranges[j][1] .<= zall .<histogram_depth_ranges[j][2]
+            # ax2[j,1].hist(img[idx,:][:], histogram_kld_ranges[j]..., density=true, histtype="step", linewidth=2)
+            qs = reduce(hcat, [quantile(in_img, [0.05, .5, 0.95]) for in_img in eachrow(img)])'
+            Δless = qs[idx,2] - qs[idx,1]
+            Δmore = qs[idx,3] - qs[idx,2]
+            ax2[j].errorbar(qs[idx,2],zall[idx], xerr=[Δless, Δmore], errorevery=(0+i, 5), capsize=4, capthick=4, elinewidth=1, linewidth=2)
+            secax2 = ax2[j].secondary_xaxis("top", functions=(nattobit, bittonat))
+            secax2.set_xlabel("KLD bits"; fontsize)
+            secax2.tick_params(labelsize=fontsize)
+            ax2[j].set_xlabel("KLD nats")
+            ax2[j].set_ylabel("Depth m")
+        end
+    end
+    ax[end-1].set_xlabel("Line distance m")
+    map(k->ax2[k, end].invert_yaxis(), 1:nhists)
+    for i = 1:nsurveys
+        usemax = isnothing(usemax) ? foundmax : usemax
+        imh[i].set_clim(vmin, usemax) 
+    end
+    cb = colorbar(imh[nsurveys], cax=ax[end], orientation="horizontal")
+    cb.set_label("KLD nats", labelpad=0)
+    map(x->transD_GP.nicenup(x, fsize=fontsize), (fig, fig2))
+end    
+
 end # module Entropyest
