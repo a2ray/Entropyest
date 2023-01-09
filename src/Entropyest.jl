@@ -1,6 +1,6 @@
 module Entropyest
 using DensityRatioEstimation, Statistics, HiQGA.transD_GP, Distributed, DelimitedFiles, 
-Dates, Random, KernelDensity, KernelDensitySJ, PyPlot
+Dates, Random, KernelDensity, KernelDensitySJ, PyPlot, Printf
 
 function getkldfromsamples(x1, x2; σ=[0.5], b=[20], nfolds=10, debug=false)
     t = time()
@@ -121,42 +121,55 @@ end
 
 function getscorefromfnames(fnames::Vector{String}, opt::transD_GP.Options; 
     ρtrue=zeros(0), ztrue=zeros(0), zboundaries=zeros(0), K=transD_GP.CommonToAll.SJ(), burninfrac=0.5, doplot=false)
-    s = map(fn->begin
+    map(fn->begin
         opt.fdataname = fn*"_"
-        getscorefromopt(opt; 
+        s = getscorefromopt(opt; 
         ρtrue, ztrue, zboundaries, K, burninfrac)
+        writedlm(opt.fdataname*"score.txt", s)
     end,
     fnames)
-end
-
-function checkavg(s::Vector, ztrue, zboundaries)
-    @assert length(s[1]) == length(ztrue)
-    scopy = map(x->zeros(length(x)), s)
-    for i in 1:length(zboundaries)
-        if i < length(zboundaries)
-            idxin = findall(zboundaries[i] .< ztrue .<= zboundaries[i+1])
-        else
-            idxin = findall(zboundaries[end] .< ztrue)
-        end        
-        for j in 1:length(s)
-            scopy[j][idxin] .= mean(s[j][idxin])
-        end     
-    end    
-    scopy
-end    
-
-function plotscores(ρ_, zb_, S::Vector; figsize=(10,5))
-    f, ax = plt.subplots(1, 2; sharey=true, figsize)
-    ax[1].step(log10.(ρ_), zb_)
-    for s in S
-        ax[2].step(s, zb_)
-    end    
-    ax[1].invert_xaxis()
-    ax[1].invert_yaxis()
+    nothing
 end
 
 nattobit(x) = log2(exp(1.))*x
 bittonat(x) = x/log2(exp(1.))
+
+function plotscoresandkld(ρ, zb, z, z_kld, fnames::Vector{String}; isboundary=false, figsize=(10,5), fontsize=11, zjitter=10)
+    f, ax = plt.subplots(1, 3; sharey=true, figsize)
+    ax[1].step(log10.(ρ), zb, color="k")
+    for (i,fn) in enumerate(fnames)
+        kld = readdlm(fn*"_kld.txt")[:,1]
+        s = readdlm(fn*"_score.txt")
+        @assert length(kld) == length(z_kld)
+        isboundary ? ax[2].step(s, z) : ax[2].plot(s, z)
+        plotq(ax[2], vec(s), [0.05, 0.5, 0.95], z_kld[end]-zjitter*i)
+        ax[3].plot(kld, z_kld)
+        plotq(ax[3], vec(kld), [0.05, 0.5, 0.95], z_kld[end]-zjitter*i)
+    end    
+    ax[1].invert_xaxis()
+    ax[1].invert_yaxis()
+    ax[1].set_title("True resistivity")
+    ax[1].set_xlabel("Log₁₀ ρ")
+    ax[1].set_ylabel("Depth m")
+    ax[2].set_xlabel("ignorance nats")
+    # secax2 = ax[2].secondary_xaxis("top", functions=(nattobit, bittonat))
+    # secax2.set_xlabel("ignorance bits"; fontsize)
+    # secax2.tick_params(labelsize=fontsize)
+    ax[3].set_xlabel("information gain nats")
+    secax3 = ax[3].secondary_xaxis("top", functions=(nattobit, bittonat))
+    secax3.set_xlabel("information gain bits"; fontsize)
+    secax3.tick_params(labelsize=fontsize)
+    ax[3].legend(fnames)
+    transD_GP.nicenup(f, fsize=fontsize)
+end
+
+function plotq(ax, x, whichqs, whichz)
+    q = quantile(x, whichqs)
+    Δless = q[2] - q[1]
+    Δmore = q[3] - q[2]
+    ax.errorbar(q[2], whichz, xerr=[[Δless], [Δmore]]; capsize=4, capthick=4, elinewidth=1, linewidth=2, marker="v", 
+        color = ax.lines[end].get_color())
+end
 
 # plot kld stuff
 function kldcompare(parentdir, subdirs; yl=nothing, topowidth=2, fontsize=11,
