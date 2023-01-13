@@ -90,7 +90,7 @@ end
 # scoring stuff
 
 function getscore(xtrue, pdfx::transD_GP.CommonToAll.KDEstimator)
-    -log(pdfx(xtrue))
+    log(pdfx(xtrue))
 end
 
 function findlayer(ztrue::Real, zboundaries::Vector)
@@ -133,28 +133,44 @@ end
 
 nattobit(x) = log2(exp(1.))*x
 bittonat(x) = x/log2(exp(1.))
+logscoretoignorance(x) = -x  
 
-function plotscoresandkld(ρ, zb, z, z_kld, fnames::Vector{String}; isboundary=false, figsize=(10,5), fontsize=11, zjitter=10)
+function plotscoresandkld(ρ, zb, z, zall_kld, zboundaries_kld, fnames::Vector{String}; isboundary=false, figsize=(10,5), fontsize=11, zjitter=10, 
+    optprior=nothing, nbins=50, cmappdf="inferno", x2=nothing, CIcolor = ["w", "k"], plotCI=true, lwidth=2)
     f, ax = plt.subplots(1, 3; sharey=true, figsize)
-    ax[1].step(log10.(ρ), zb, color="k")
+    till = findlast(zb[end] .>= zboundaries_kld)
+    if !isnothing(optprior)
+        @assert !isnothing(x2) # prior samples vector
+        himage, edges, CI, meanimage, = transD_GP.CommonToAll.gethimage(transD_GP.LineRegression.Line([1.]), x2, optprior; temperaturenum=1,
+                nbins, usekde=true)
+        im1 = ax[1].pcolormesh(edges[:], [zboundaries_kld[1:till]; zboundaries_kld[till+1]], himage[1:till,:], cmap=cmappdf, vmin=0.)
+        # plotCI && ax[1].plot(CI, zall_kld, linewidth=lwidth, color=CIcolor[1])
+        # plotCI && ax[1].plot(CI, zall_kld, linewidth=lwidth, color=CIcolor[2], linestyle="--")
+        # # ax[1].plot(meanimage[:], zall_kld, linewidth=lwidth, color="r", linestyle="--")
+        # @info mean(meanimage[:])                
+    end    
+    ax[1].step(log10.(ρ), zb, color="w", linewidth=3)
+    ax[1].step(log10.(ρ), zb, color="k", linewidth=1.5)
+    cb1 = colorbar(im1, ax=ax[1])
+    cb1.ax.set_title("prior\npdf")
     for (i,fn) in enumerate(fnames)
         kld = readdlm(fn*"_kld.txt")[:,1]
         s = readdlm(fn*"_score.txt")
-        @assert length(kld) == length(z_kld)
-        isboundary ? ax[2].step(s, z) : ax[2].plot(s, z)
-        plotq(ax[2], vec(s), [0.05, 0.5, 0.95], z_kld[end]-zjitter*i)
-        ax[3].plot(kld, z_kld)
-        plotq(ax[3], vec(kld), [0.05, 0.5, 0.95], z_kld[end]-zjitter*i)
+        @assert length(kld) == length(zall_kld)
+        isboundary ? ax[2].step(s, zb) : ax[2].plot(s, z)
+        plotq(ax[2], vec(s), [0.05, 0.5, 0.95], zboundaries_kld[end]-zjitter*i)
+        ax[3].plot(kld[1:till], zall_kld[1:till])
+        plotq(ax[3], vec(kld), [0.05, 0.5, 0.95], zboundaries_kld[end]-zjitter*i)
     end    
     ax[1].invert_xaxis()
     ax[1].invert_yaxis()
     ax[1].set_title("True resistivity")
     ax[1].set_xlabel("Log₁₀ ρ")
     ax[1].set_ylabel("Depth m")
-    ax[2].set_xlabel("ignorance nats")
-    # secax2 = ax[2].secondary_xaxis("top", functions=(nattobit, bittonat))
-    # secax2.set_xlabel("ignorance bits"; fontsize)
-    # secax2.tick_params(labelsize=fontsize)
+    ax[2].set_xlabel("log score")
+    secax2 = ax[2].secondary_xaxis("top", functions=(logscoretoignorance, logscoretoignorance))
+    secax2.set_xlabel("ignorance score"; fontsize)
+    secax2.tick_params(labelsize=fontsize)
     ax[3].set_xlabel("information gain nats")
     secax3 = ax[3].secondary_xaxis("top", functions=(nattobit, bittonat))
     secax3.set_xlabel("information gain bits"; fontsize)
@@ -172,12 +188,14 @@ function plotq(ax, x, whichqs, whichz)
 end
 
 # plot kld stuff
-function kldcompare(parentdir, subdirs; yl=nothing, topowidth=2, fontsize=11,
+function kldcompare(parentdir, subdirs; yl=nothing, topowidth=2, fontsize=11, idxshow=[], legendstring=[],
         figsize=(15, 4), zall=[1.], dr=[1.], dz=[1.], vmin=1e-2, cmap="gist_ncar", usemax=nothing, figsize_hist=(5,7),
         preferEright=true, preferNright=false, histogram_depth_ranges=([0., 300],), histogram_kld_ranges=([0:0.1:2],))
     # has to be run from the parent directory containing all survey subdirs
     @assert length(histogram_depth_ranges) == length(histogram_kld_ranges)
     nsurveys, nhists = length(subdirs), length(histogram_depth_ranges)
+    !isempty(idxshow) && @assert length(idxshow) == nsurveys
+    isempty(legendstring) &&(legendstring = subdirs)
     heightratios = ones(nsurveys+1); heightratios[end]=0.1
     fig, ax = plt.subplots(nsurveys+1, 1, gridspec_kw=Dict("height_ratios" => heightratios), figsize=figsize)
     fig2, ax2 = plt.subplots(nhists, 1, sharex="all", figsize=figsize_hist, squeeze=false)
@@ -191,10 +209,12 @@ function kldcompare(parentdir, subdirs; yl=nothing, topowidth=2, fontsize=11,
         maximg = maximum(img[:])
         (maximg > foundmax) && (foundmax = maximg)
         A, gridx, gridz, topofine, R = transD_GP.CommonToAll.makegrid(img, soundings; zall, dz, dr)
+        Z = [s.Z for s in soundings]
         imh[i] = ax[i].imshow(A; extent=[gridx[1], gridx[end], gridz[end], gridz[1]], aspect="auto", cmap, vmin)
         ax[i].plot(gridx, topofine, linewidth=topowidth, "-k")
         ax[i].set_ylabel("Height m")
         !isnothing(yl) && ax[i].set_ylim(yl)
+        !isempty(idxshow) && transD_GP.CommonToAll.plotprofile(ax[i], [idxshow[i]], Z, R)
         transD_GP.CommonToAll.plotNEWSlabels(soundings, gridx, gridz, [ax[i]]; preferEright, preferNright)
         i != nsurveys && ax[i].set_xticklabels([])
         # now for the histograms with depth
@@ -204,13 +224,16 @@ function kldcompare(parentdir, subdirs; yl=nothing, topowidth=2, fontsize=11,
             qs = reduce(hcat, [quantile(in_img, [0.05, .5, 0.95]) for in_img in eachrow(img)])'
             Δless = qs[idx,2] - qs[idx,1]
             Δmore = qs[idx,3] - qs[idx,2]
-            ax2[j].errorbar(qs[idx,2],zall[idx], xerr=[Δless, Δmore], errorevery=(0+i, 5), capsize=4, capthick=4, elinewidth=1, linewidth=2)
+            ax2[j].errorbar(qs[idx,2],zall[idx], xerr=[Δless, Δmore], errorevery=(0+i, 5), capsize=4, capthick=4, elinewidth=1, linewidth=2, label=legendstring[i])
+            !isempty(idxshow) && ax2[j].plot(img[idx,idxshow[i]], zall[idx], color = ax2[j].lines[end].get_color(), "--")
             secax2 = ax2[j].secondary_xaxis("top", functions=(nattobit, bittonat))
             secax2.set_xlabel("KLD bits"; fontsize)
             secax2.tick_params(labelsize=fontsize)
             ax2[j].set_xlabel("KLD nats")
             ax2[j].set_ylabel("Depth m")
         end
+        ax2[end].legend(framealpha=0.1)
+        ax[i].set_title(legendstring[i])
     end
     ax[end-1].set_xlabel("Line distance m")
     map(k->ax2[k, end].invert_yaxis(), 1:nhists)
@@ -220,7 +243,7 @@ function kldcompare(parentdir, subdirs; yl=nothing, topowidth=2, fontsize=11,
     end
     cb = colorbar(imh[nsurveys], cax=ax[end], orientation="horizontal")
     cb.set_label("KLD nats", labelpad=0)
-    map(x->transD_GP.nicenup(x, fsize=fontsize), (fig, fig2))
+    map(x->transD_GP.nicenup(x, fsize=fontsize, h_pad=0), (fig, fig2))
 end    
 
 end # module Entropyest
