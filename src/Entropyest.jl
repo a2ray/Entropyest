@@ -205,6 +205,10 @@ function kldcompare(parentdir, subdirs; yl=nothing, topowidth=2, fontsize=11, id
         include(joinpath(parentdir, dir, "01_read_data.jl"))
         A = [readdlm(joinpath(parentdir, dir, s.sounding_string*"_kld.txt"))[:,1] for s in soundings]
         img = reduce(hcat, A)
+        linename = "_line_$(soundings[1].linenum)_summary.txt"
+        chi2fname = "phid_mean"*linename
+        chi2mean = readdlm(joinpath(parentdir, dir, chi2fname))[:,1]
+        idxgoodchi2 = chi2mean .<= 1.21
         img[img.<0] .= 0.
         maximg = maximum(img[:])
         (maximg > foundmax) && (foundmax = maximg)
@@ -221,7 +225,7 @@ function kldcompare(parentdir, subdirs; yl=nothing, topowidth=2, fontsize=11, id
         for j = 1:nhists
             idx = histogram_depth_ranges[j][1] .<= zall .<histogram_depth_ranges[j][2]
             # ax2[j,1].hist(img[idx,:][:], histogram_kld_ranges[j]..., density=true, histtype="step", linewidth=2)
-            qs = reduce(hcat, [quantile(in_img, [0.05, .5, 0.95]) for in_img in eachrow(img)])'
+            qs = reduce(hcat, [quantile(in_img[idxgoodchi2], [0.05, .5, 0.95]) for in_img in eachrow(img)])'
             Δless = qs[idx,2] - qs[idx,1]
             Δmore = qs[idx,3] - qs[idx,2]
             ax2[j].errorbar(qs[idx,2],zall[idx], xerr=[Δless, Δmore], errorevery=(0+i, 5), capsize=4, capthick=4, elinewidth=1, linewidth=2, label=legendstring[i])
